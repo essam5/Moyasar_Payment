@@ -26,6 +26,7 @@ from checkout_payment.utils import (
     get_payment_customer_id,
 )
 from saleor.payment.models import Payment
+import base64
 
 
 class MoyasarPaymentPlugin(BasePlugin):
@@ -34,8 +35,14 @@ class MoyasarPaymentPlugin(BasePlugin):
     CONFIGURATION_PER_CHANNEL = False
 
     DEFAULT_CONFIGURATION = [
-        {"name": "public_api_key", "value": None},
-        {"name": "secret_api_key", "value": None},
+        {
+            "name": "public_api_key",
+            "value": "sk_test_9FcaoMeU3FUB787UJq7fP68TnzP4xaeq2amiVFFq",
+        },
+        {
+            "name": "secret_api_key",
+            "value": "sk_test_9FcaoMeU3FUB787UJq7fP68TnzP4xaeq2amiVFFq",
+        },
         {"name": "supported_currencies", "value": "SAR"},
     ]
 
@@ -130,11 +137,18 @@ class MoyasarPaymentPlugin(BasePlugin):
             apple_pay_data = payment_q.get_value_from_metadata("moyasar_data")
 
             # Update the payment data with the extracted attributes
-            payment_data.update({"amount": amount, "currency": currency})
+            payment_data.update(
+                {
+                    "amount": int(payment_information.amount),
+                    "currency": currency,
+                }
+            )
 
-            # Create a payment request to Moyasar using Apple Pay data
+            base64_encoded_key = base64.b64encode(api_key.encode()).decode()
+
+            # Create a payment request to Moyasar
             headers = {
-                "Authorization": f"Bearer {api_key}",
+                "Authorization": f"Basic {base64_encoded_key}:",
                 "Content-Type": "application/json",
             }
 
@@ -143,10 +157,10 @@ class MoyasarPaymentPlugin(BasePlugin):
                     f"{MOYASAR_API_BASE_URL}/payments",
                     headers=headers,
                     json=apple_pay_data,
-                )
+                ).json()
 
                 # Handle the response and return the payment status
-                if response.status_code == 200:
+                if response.get("id"):
                     payment_status = "confirmed with Apple Pay"
                 else:
                     payment_status = "failed with Apple Pay"
@@ -158,16 +172,21 @@ class MoyasarPaymentPlugin(BasePlugin):
 
         else:
             # Extract the payment data from the metadata
-            payment_data = payment_information.get("metadata", {}).get(
-                "moyasar_data", {}
-            )
+            payment_data = payment_q.get_value_from_metadata("moyasar_data")
 
             # Update the payment data with the extracted attributes
-            payment_data.update({"amount": amount, "currency": currency})
+            payment_data.update(
+                {
+                    "amount": int(payment_information.amount),
+                    "currency": currency,
+                }
+            )
+
+            base64_encoded_key = base64.b64encode(api_key.encode()).decode()
 
             # Create a payment request to Moyasar
             headers = {
-                "Authorization": f"Bearer {api_key}",
+                "Authorization": f"Basic {base64_encoded_key}:",
                 "Content-Type": "application/json",
             }
 
@@ -176,10 +195,10 @@ class MoyasarPaymentPlugin(BasePlugin):
                     f"{MOYASAR_API_BASE_URL}/payments",
                     headers=headers,
                     json=payment_data,
-                )
+                ).json()
 
                 # Handle the response and return the payment status
-                if response.status_code == 200:
+                if response.get("id"):
                     payment_status = "confirmed"
                     is_3ds_url = (
                         response.redirect_link.get("href")
@@ -187,10 +206,10 @@ class MoyasarPaymentPlugin(BasePlugin):
                         else None
                     )
                     process_response = _success_response(
-                        token=response.id,
+                        token=response.get("id"),
                         amount=payment_information.amount,
                         currency=payment_information.currency,
-                        payment_response=response.http_response.body,
+                        payment_response=response,
                         customer_id=get_payment_customer_id(payment_information),
                         is_success=True,
                         kind=TransactionKind.AUTH
@@ -228,8 +247,12 @@ class MoyasarPaymentPlugin(BasePlugin):
 
         api_key = config.connection_params["public_key"]
         payment_id = payment_information.token
+
+        base64_encoded_key = base64.b64encode(api_key.encode()).decode()
+
+        # Create a payment request to Moyasar
         headers = {
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Basic {base64_encoded_key}:",
             "Content-Type": "application/json",
         }
         try:
@@ -237,15 +260,15 @@ class MoyasarPaymentPlugin(BasePlugin):
                 f"{MOYASAR_API_BASE_URL}/payments/{payment_id}/capture",
                 headers=headers,
                 json={},
-            )
+            ).json()
 
             # Handle the response and return the capture status
-            if response.status_code == 200:
+            if response.get("id"):
                 process_response = _success_response(
-                    token=response.id,
+                    token=response.get("id"),
                     amount=payment_information.amount,
                     currency=payment_information.currency,
-                    payment_response=response.http_response.body,
+                    payment_response=response,
                     customer_id=get_payment_customer_id(payment_information),
                     is_success=True,
                     kind=TransactionKind.CAPTURE,
@@ -278,8 +301,12 @@ class MoyasarPaymentPlugin(BasePlugin):
 
         api_key = config.connection_params["public_key"]
         payment_id = payment_information.token
+
+        base64_encoded_key = base64.b64encode(api_key.encode()).decode()
+
+        # Create a payment request to Moyasar
         headers = {
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Basic {base64_encoded_key}:",
             "Content-Type": "application/json",
         }
         try:
@@ -287,15 +314,15 @@ class MoyasarPaymentPlugin(BasePlugin):
                 f"{MOYASAR_API_BASE_URL}/payments/{payment_id}/refund",
                 headers=headers,
                 json={},
-            )
+            ).json()
 
             # Handle the response and return the refund status
-            if response.status_code == 200:
+            if response.get("id"):
                 process_response = _success_response(
-                    token=response.id,
+                    token=response.get("id"),
                     amount=payment_information.amount,
                     currency=payment_information.currency,
-                    payment_response=response.http_response.body,
+                    payment_response=response,
                     customer_id=get_payment_customer_id(payment_information),
                     is_success=True,
                     kind=TransactionKind.REFUND,
@@ -328,8 +355,11 @@ class MoyasarPaymentPlugin(BasePlugin):
 
         api_key = config.connection_params["public_key"]
         payment_id = payment_information.token
+        base64_encoded_key = base64.b64encode(api_key.encode()).decode()
+
+        # Create a payment request to Moyasar
         headers = {
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Basic {base64_encoded_key}:",
             "Content-Type": "application/json",
         }
         try:
@@ -337,15 +367,15 @@ class MoyasarPaymentPlugin(BasePlugin):
                 f"{MOYASAR_API_BASE_URL}/payments/{payment_id}/confirm",
                 headers=headers,
                 json={},
-            )
+            ).json()
 
             # Handle the response and return the confirm status
-            if response.status_code == 200:
+            if response.get("id"):
                 process_response = _success_response(
-                    token=response.id,
+                    token=response.get("id"),
                     amount=payment_information.amount,
                     currency=payment_information.currency,
-                    payment_response=response.http_response.body,
+                    payment_response=response,
                     customer_id=get_payment_customer_id(payment_information),
                     is_success=True,
                     kind=TransactionKind.REFUND,
